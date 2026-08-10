@@ -1,0 +1,28 @@
+# 敏感文件：登录态 cookie 与 API 密钥，绝不提交
+storage_state.json
+.env
+
+# Web 版历史记录数据库
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 临时测试脚本
+test_*.py
+
+# 参考用临时目录（学长项目副本，仅本地参考，不上传）
+临时文件/
+
+# IDE 配置
+.trae/
+.idea/
+.vscode/
+
+# 系统与日志文件
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,1965 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>水源社区 Agent</title>
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    height: 100vh; display: flex; overflow: hidden;
+    background: #f7f7f8; color: #0d0d0d;
+  }
+
+  /* ===== 左侧历史栏 ===== */
+  #sidebar {
+    width: 260px; background: #f0f0f1; border-right: 1px solid #e3e3e6;
+    display: flex; flex-direction: column; flex-shrink: 0;
+    overflow: hidden; transition: width 0.2s ease;
+  }
+  /* 侧边栏顶部：图标 - 搜索栏 - 收起按钮（第一行）/ 新对话（第二行） */
+  #sidebar header {
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+    flex-shrink: 0;
+  }
+  .sidebar-top-row { display: flex; align-items: center; gap: 4px; }
+  .brand-title {
+    flex: 1; min-width: 0; font-size: 15px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* 搜索浮层：覆盖在页面最顶层 */
+  .search-overlay {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .search-overlay.active { display: block; }
+  .search-modal {
+    position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+    width: 90%; max-width: 640px; background: #fff;
+    border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18); overflow: hidden;
+  }
+  .search-modal-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; border-bottom: 1px solid #e3e3e6;
+  }
+  .search-modal-bar svg { width: 18px; height: 18px; fill: #9a9a9e; flex-shrink: 0; }
+  .search-modal-bar input {
+    flex: 1; border: none; outline: none; font-size: 15px; min-width: 0;
+    font-family: inherit; background: transparent;
+  }
+  .search-results { max-height: 60vh; overflow-y: auto; }
+  .search-results .result-item {
+    padding: 12px 16px; cursor: pointer;
+    border-bottom: 1px solid #f0f0f1;
+  }
+  .search-results .result-item:hover { background: #f6f6f7; }
+  .search-results .result-title {
+    font-size: 14px; color: #353740; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .search-results .result-snippet {
+    font-size: 12.5px; color: #9a9a9e; margin-top: 4px; line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .search-results mark { background: #fef08a; color: inherit; border-radius: 2px; padding: 0 1px; }
+  .search-results .result-empty { padding: 24px; text-align: center; color: #9a9a9e; font-size: 13px; }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    background: transparent; border: none; cursor: pointer; color: #6b6b6f;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: #e3e3e6; color: #353740; }
+  .icon-btn svg { width: 18px; height: 18px; fill: currentColor; }
+  #newBtn {
+    background: #10a37f; color: #fff; border: none; border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  #newBtn:hover { background: #0d8f6f; }
+  #newBtn svg { width: 16px; height: 16px; fill: #fff; }
+  /* 收起状态：仅保留展开按钮 */
+  #sidebar.collapsed { width: 52px; }
+  #sidebar.collapsed header,
+  #sidebar.collapsed #convList,
+  #sidebar.collapsed footer { display: none; }
+  #expandBtn { display: none; }
+  #sidebar.collapsed #expandBtn { display: flex; margin: 10px auto; }
+  #convList { flex: 1; overflow-y: auto; padding: 4px 8px; }
+  .conv-group-header {
+    padding: 10px 12px 4px; font-size: 11px; color: #9a9a9e;
+    font-weight: 600; letter-spacing: 0.5px;
+  }
+  .conv-group-header:first-child { padding-top: 6px; }
+  .conv-item {
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; color: #353740; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; position: relative; margin-bottom: 2px;
+  }
+  .conv-item:hover { background: #e3e3e6; }
+  .conv-item.active { background: #e3e3e6; font-weight: 600; }
+  .conv-item .del {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    display: none; color: #9a9a9e; cursor: pointer; font-size: 14px;
+  }
+  .conv-item:hover .del { display: inline; }
+  .conv-item .del:hover { color: #d94841; }
+  .conv-item .edit {
+    position: absolute; right: 30px; top: 50%; transform: translateY(-50%);
+    display: none; color: #9a9a9e; cursor: pointer; font-size: 12px;
+  }
+  .conv-item:hover .edit { display: inline; }
+  .conv-item .edit:hover { color: #353740; }
+  .conv-item input.rename-input {
+    width: 100%; box-sizing: border-box; font-size: 13px; font-family: inherit;
+    border: 1px solid #7aa7ff; border-radius: 4px; padding: 2px 4px;
+    outline: none; background: #fff;
+  }
+  #sidebar footer {
+    padding: 8px 10px; font-size: 12px; color: #9a9a9e;
+    border-top: 1px solid #e3e3e6;
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  #sidebar footer .footer-text {
+    flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ===== 主聊天区 ===== */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #chatArea {
+    flex: 1; overflow-y: auto; padding: 24px 0;
+  }
+  .msg-row { display: flex; padding: 14px 0; }
+  .msg-row.user { justify-content: flex-end; }
+  .bubble {
+    max-width: 700px; padding: 12px 18px; border-radius: 14px;
+    font-size: 14.5px; line-height: 1.7;
+  }
+  .msg-row.user .bubble {
+    background: #10a37f; color: #fff; border-top-right-radius: 4px;
+  }
+  .msg-row.assistant .bubble {
+    background: #fff; border: 1px solid #e3e3e6; border-top-left-radius: 4px;
+    width: 100%; max-width: 800px;
+  }
+  /* 气泡左下角外部的操作按钮（复制 / 重新生成），默认淡显、悬停加深 */
+  .msg-actions {
+    display: flex; gap: 2px; padding: 5px 2px 0;
+    opacity: 0.5; transition: opacity 0.15s;
+  }
+  .msg-row:hover .msg-actions { opacity: 1; }
+  .action-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border: none; border-radius: 6px;
+    background: transparent; color: #9a9a9e; cursor: pointer;
+  }
+  .action-btn:hover { background: #ececee; color: #353740; }
+  /* 用户气泡在右侧，其操作按钮靠右对齐（助手气泡在左侧，默认靠左） */
+  .msg-actions.user-actions { justify-content: flex-end; }
+  /* 分享下拉菜单（导出 TXT / Markdown / PDF / 图片），挂在 body 上避免被裁切 */
+  .share-menu {
+    position: fixed; z-index: 10000; min-width: 168px;
+    background: #fff; border: 1px solid #e3e3e6; border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 4px;
+  }
+  .share-item {
+    display: block; width: 100%; text-align: left; border: none; background: none;
+    cursor: pointer; padding: 8px 12px; border-radius: 6px; font-size: 13.5px; color: #1f1f1f;
+  }
+  .share-item:hover { background: #f0f0f1; }
+  /* 轻提示：复制/重新生成等操作的短暂反馈 */
+  #globalToast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-10px);
+    background: rgba(0, 0, 0, 0.75); color: #fff; font-size: 12.5px;
+    padding: 7px 16px; border-radius: 8px; z-index: 9999;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+  }
+  #globalToast.toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  /* 聊天内容与底部输入栏对齐：统一 800px 居中 */
+  .msg-row .inner { width: 100%; max-width: 800px; margin: 0 auto; }
+  .msg-row.user { justify-content: center; }
+  .msg-row.user .bubble {
+    margin-left: auto; width: fit-content;
+    text-align: left;
+  }
+  /* ===== 思考过程日志（可折叠） ===== */
+  .status-log {
+    margin-bottom: 8px; border-radius: 8px;
+    background: #f6f6f7; border: 1px solid #ececee;
+    overflow: hidden;
+  }
+  .status-summary {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; cursor: pointer; user-select: none;
+    font-size: 12.5px; color: #6b6b6f;
+  }
+  .status-summary:hover { background: #ececee; }
+  .status-summary-icon { flex-shrink: 0; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; }
+  .status-summary-icon svg { width: 14px; height: 14px; fill: #6b6b6f; }
+  .status-summary-text { flex: 1; min-width: 0; }
+  .status-summary-tokens {
+    font-size: 11.5px; color: #6b6b6f;
+    background: #fff; border: 1px solid #e3e3e6;
+    border-radius: 10px; padding: 1px 8px; flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+  .status-summary-tokens svg { width: 11px; height: 11px; fill: #f59e0b; }
+  .status-toggle { color: #9a9a9e; font-size: 11px; flex-shrink: 0; }
+  .status-body {
+    padding: 4px 10px 8px; border-top: 1px solid #ececee;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .status-log[data-collapsed="true"] .status-body { display: none; }
+  .status-log[data-collapsed="true"] { background: transparent; border-color: transparent; }
+  .status-log[data-collapsed="true"] .status-summary { background: transparent; }
+  .status-log[data-collapsed="true"] .status-summary:hover { background: #f0f0f1; }
+  .status-line-row {
+    display: flex; gap: 6px; align-items: flex-start;
+    font-size: 12.5px; line-height: 1.55; color: #9a9a9e;
+  }
+  .status-line-icon { flex-shrink: 0; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; }
+  .status-line-icon svg { width: 14px; height: 14px; fill: #9a9a9e; }
+  .status-line-text { flex: 1; min-width: 0; word-break: break-word; white-space: pre-wrap; }
+  /* 类型颜色：仅染图标 SVG 的 fill，文本保持灰以保证可读性；error 行文本也染红 */
+  .status-type-question .status-line-icon svg { fill: #10a37f; }
+  .status-type-think .status-line-icon svg { fill: #6366f1; }
+  .status-type-search .status-line-icon svg { fill: #3b82f6; }
+  .status-type-read .status-line-icon svg { fill: #f59e0b; }
+  .status-type-browse .status-line-icon svg { fill: #0ea5e9; }
+  .status-type-user .status-line-icon svg { fill: #8b5cf6; }
+  .status-type-stats .status-line-icon svg { fill: #14b8a6; }
+  .status-type-similar .status-line-icon svg { fill: #ec4899; }
+  .status-type-meta .status-line-icon svg { fill: #6b6b6f; }
+  .status-type-deep .status-line-icon svg { fill: #6366f1; }
+  .status-type-deep_sub { padding-left: 22px; }
+  .status-type-deep_sub .status-line-icon svg { width: 9px; height: 9px; fill: #c0c0c4; }
+  .status-type-done .status-line-icon svg { fill: #1e8e3e; }
+  .status-type-usage .status-line-icon svg { fill: #f59e0b; }
+  .status-type-error .status-line-icon svg { fill: #d94841; }
+  .status-type-error .status-line-text { color: #d94841; }
+  .status-type-default .status-line-icon svg { fill: #9a9a9e; }
+  /* 思考链可折叠块 */
+  .think-block .think-toggle { color: #9a9a9e; font-size: 12.5px; }
+  .think-block .think-full { display: block; color: #8a8a8e; font-size: 12px; line-height: 1.6; margin-top: 4px; white-space: pre-wrap; }
+  .think-block:hover .think-toggle { color: #6b6b6f; }
+  /* 帖子引用链接 */
+  .status-line-text a.topic-link {
+    color: #10a37f; text-decoration: none;
+    border-bottom: 1px dotted #10a37f;
+  }
+  .status-line-text a.topic-link:hover { text-decoration: underline; }
+  .md-content { word-break: break-word; }
+  .md-content h1, .md-content h2, .md-content h3 { margin: 12px 0 8px; line-height: 1.4; }
+  .md-content h1 { font-size: 20px; } .md-content h2 { font-size: 17px; } .md-content h3 { font-size: 15px; }
+  .md-content p { margin: 8px 0; }
+  .md-content ul, .md-content ol { padding-left: 22px; margin: 8px 0; }
+  .md-content li { margin: 4px 0; }
+  .md-content pre {
+    background: #f6f6f7; border: 1px solid #e3e3e6; border-radius: 8px;
+    padding: 12px; overflow-x: auto; font-size: 13px; margin: 10px 0;
+  }
+  .md-content code {
+    background: #f0f0f1; border-radius: 4px; padding: 1px 5px; font-size: 13px;
+  }
+  .md-content pre code { background: none; padding: 0; }
+  .md-content blockquote {
+    border-left: 3px solid #e3e3e6; padding-left: 12px; color: #6b6b6f; margin: 8px 0;
+  }
+  .md-content a { color: #10a37f; text-decoration: none; }
+  .md-content a:hover { text-decoration: underline; }
+  .md-content table { border-collapse: collapse; margin: 10px 0; }
+  .md-content th, .md-content td { border: 1px solid #e3e3e6; padding: 6px 10px; }
+  .cursor { display: inline-block; width: 8px; height: 16px; background: #10a37f;
+    animation: blink 1s infinite; vertical-align: text-bottom; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ===== 底部输入 ===== */
+  #inputArea {
+    padding: 16px 24px 24px; background: #f7f7f8;
+  }
+  #inputWrap {
+    max-width: 800px; margin: 0 auto; background: #fff;
+    border: 1px solid #d9d9de; border-radius: 14px; padding: 6px 8px;
+    display: flex; align-items: flex-end;
+  }
+  #inputWrap:focus-within { border-color: #10a37f; box-shadow: 0 0 0 2px rgba(16,163,127,.12); }
+  #chatInput {
+    flex: 1; border: none; outline: none; resize: none; padding: 10px 12px;
+    font-size: 14.5px; font-family: inherit; line-height: 1.5; max-height: 160px;
+    background: transparent;
+  }
+  #sendBtn {
+    background: #10a37f; color: #fff; border: none; border-radius: 8px;
+    width: 36px; height: 36px; cursor: pointer; font-size: 18px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #sendBtn:disabled { background: #c9c9ce; cursor: not-allowed; }
+  #sendBtn svg { width: 18px; height: 18px; fill: #fff; }
+  /* 联网搜索开关：开启=品牌绿，关闭=灰色；用 currentColor 随 .off 切换 */
+  #webBtn {
+    background: transparent; border: none; border-radius: 8px;
+    width: 36px; height: 36px; cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #10a37f;
+  }
+  #webBtn:hover { background: #f0f0f1; }
+  #webBtn.off { color: #bfbfc4; }
+  #webBtn:disabled { cursor: not-allowed; opacity: 0.5; }
+  #webBtn svg { width: 20px; height: 20px; fill: currentColor; }
+
+  /* ===== 记忆设置浮层 ===== */
+  .memory-modal {
+    position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+    width: 90%; max-width: 560px; background: #fff;
+    border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18); overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .memory-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid #e3e3e6;
+  }
+  .memory-title { font-size: 15px; font-weight: 600; color: #353740; }
+  .memory-hint { padding: 12px 16px 0; font-size: 12.5px; color: #9a9a9e; line-height: 1.6; }
+  .memory-modal textarea {
+    margin: 12px 16px; padding: 10px 12px; border: 1px solid #d9d9de;
+    border-radius: 8px; font-size: 13.5px; line-height: 1.6; resize: vertical;
+    min-height: 180px; font-family: inherit; outline: none;
+  }
+  .memory-modal textarea:focus { border-color: #10a37f; box-shadow: 0 0 0 2px rgba(16,163,127,.12); }
+  .memory-modal textarea.over-limit { border-color: #d94841; }
+  .memory-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-top: 1px solid #f0f0f1;
+  }
+  .memory-count { font-size: 12px; color: #9a9a9e; }
+  .memory-count.over-limit { color: #d94841; }
+  .memory-save-btn {
+    background: #10a37f; color: #fff; border: none; border-radius: 8px;
+    padding: 7px 18px; font-size: 13px; cursor: pointer;
+  }
+  .memory-save-btn:hover { background: #0d8f6f; }
+  .memory-save-btn:disabled { background: #c9c9ce; cursor: not-allowed; }
+
+  /* ===== 设置浮层（功能5）===== */
+  .settings-form { padding: 8px 16px 4px; overflow-y: auto; max-height: 55vh; }
+  .settings-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 0; border-bottom: 1px solid #f0f0f1;
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row label {
+    flex: 0 0 150px; font-size: 13px; color: #353740; min-width: 0;
+  }
+  .settings-row input {
+    flex: 1; min-width: 0; padding: 7px 10px;
+    border: 1px solid #d9d9de; border-radius: 8px;
+    font-size: 13px; font-family: inherit; outline: none;
+  }
+  .settings-row input:focus { border-color: #10a37f; box-shadow: 0 0 0 2px rgba(16,163,127,.12); }
+  /* 长期记忆行：与其它设置行同高（开关与按钮横向排列，无多余上下留白） */
+  .settings-toggle-wrap {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px;
+  }
+  .settings-checkbox {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: #6b6b6f; cursor: pointer; white-space: nowrap;
+  }
+  .settings-checkbox input { width: auto; flex: none; cursor: pointer; }
+  .settings-link-btn {
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-size: 12.5px; color: #10a37f; font-family: inherit;
+  }
+  .settings-link-btn:hover { text-decoration: underline; }
+
+  /* 空状态 */
+  #emptyHint {
+    text-align: center; color: #9a9a9e; margin-top: 15vh; font-size: 15px;
+  }
+</style>
+</head>
+<body>
+
+<!-- 左侧历史栏 -->
+<aside id="sidebar">
+  <header>
+    <div class="sidebar-top-row">
+      <span class="brand-title">水源社区 Agent</span>
+      <button id="searchBtn" class="icon-btn" title="搜索对话">
+        <svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 0 0-5.29 14.01L1.86 18.86l1.42 1.42 2.85-2.85A8 8 0 1 0 10 2zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"/></svg>
+      </button>
+      <button id="collapseBtn" class="icon-btn" title="收起边栏">
+        <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      </button>
+    </div>
+    <button id="newBtn">
+      <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+      <span>新对话</span>
+    </button>
+  </header>
+  <div id="convList"></div>
+  <footer>
+    <span class="footer-text">Agent · shuiyuan.sjtu.edu.cn</span>
+    <button id="settingsBtn" class="icon-btn" title="设置">
+      <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94 0 .31.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+    </button>
+  </footer>
+  <button id="expandBtn" class="icon-btn" title="展开边栏">
+    <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+  </button>
+</aside>
+
+<!-- 主聊天区 -->
+<main id="main">
+  <div id="chatArea">
+    <div id="emptyHint">向水源社区提问，Agent 会帮你搜索、读帖并总结。</div>
+  </div>
+  <div id="inputArea">
+    <div id="inputWrap">
+      <textarea id="chatInput" rows="1" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <button id="webBtn" title="联网搜索：开启">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+      </button>
+      <button id="sendBtn" title="发送" disabled>
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+</main>
+
+<!-- 搜索浮层：覆盖在页面最顶层 -->
+<div id="searchOverlay" class="search-overlay">
+  <div class="search-modal">
+    <div class="search-modal-bar">
+      <svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 0 0-5.29 14.01L1.86 18.86l1.42 1.42 2.85-2.85A8 8 0 1 0 10 2zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"/></svg>
+      <input id="searchModalInput" type="text" placeholder="搜索对话" autocomplete="off" />
+      <button id="searchCloseBtn" class="icon-btn" title="退出搜索">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
+
+<!-- 记忆设置浮层 -->
+<div id="memoryOverlay" class="search-overlay">
+  <div class="memory-modal">
+    <div class="memory-modal-header">
+      <span class="memory-title">长期记忆</span>
+      <button id="memoryCloseBtn" class="icon-btn" title="关闭">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <p class="memory-hint">记忆会在每次提问时随问题一起发给 Agent 参考；每次回答完成后会自动提炼并更新。</p>
+    <textarea id="memoryTextarea" placeholder="在这里填写长期记忆，如：我是交大电院大二学生，偏好简洁回答…"></textarea>
+    <div class="memory-footer">
+      <span id="memoryCount" class="memory-count">0 / 2000</span>
+      <button id="memorySaveBtn" class="memory-save-btn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 设置浮层（功能5） -->
+<div id="settingsOverlay" class="search-overlay">
+  <div class="memory-modal settings-modal">
+    <div class="memory-modal-header">
+      <span class="memory-title">设置</span>
+      <button id="settingsCloseBtn" class="icon-btn" title="关闭">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <p class="memory-hint">修改 Agent 的模型与行为配置。模型、搜索条数、请求间隔等修改即时生效；API Key / 地址 / 超时需重启服务后生效。</p>
+    <div class="settings-form">
+      <div class="settings-row"><label>模型名称</label><input data-field="llm_model" type="text" placeholder="deepseek-v4-flash" /></div>
+      <div class="settings-row"><label>API Key</label><input data-field="llm_api_key" type="password" placeholder="留空表示不修改" autocomplete="off" /></div>
+      <div class="settings-row"><label>API 地址</label><input data-field="llm_base_url" type="text" placeholder="https://api.deepseek.com" /></div>
+      <div class="settings-row"><label>请求超时（秒）</label><input data-field="llm_timeout" type="number" min="1" placeholder="120" /></div>
+      <div class="settings-row"><label>最大工具调用轮数</label><input data-field="max_agent_rounds" type="number" min="1" max="50" placeholder="10" /></div>
+      <div class="settings-row"><label>对话记忆轮数</label><input data-field="history_window" type="number" min="0" max="20" placeholder="5" /></div>
+      <div class="settings-row"><label>长期记忆字数上限</label><input data-field="memory_max_chars" type="number" min="100" placeholder="2000" /></div>
+      <div class="settings-row">
+        <label>长期记忆</label>
+        <div class="settings-toggle-wrap">
+          <label class="settings-checkbox"><input data-field="memory_enabled" type="checkbox" /> 开启（自动记录偏好）</label>
+          <button id="openMemoryBtn" class="settings-link-btn" type="button">编辑记忆内容…</button>
+        </div>
+      </div>
+      <div class="settings-row"><label>论坛请求间隔（秒）</label><input data-field="request_delay" type="number" min="0" step="0.1" placeholder="1.0" /></div>
+      <div class="settings-row"><label>搜索返回条数</label><input data-field="search_limit" type="number" min="1" max="50" placeholder="10" /></div>
+      <div class="settings-row"><label>图片理解</label>
+        <div class="settings-toggle-wrap">
+          <label class="settings-checkbox"><input data-field="vision_enabled" type="checkbox" /> 开启（自动理解帖子/网页中的图片）</label>
+        </div>
+      </div>
+      <div class="settings-row"><label>视觉模型 API 地址</label><input data-field="vision_base_url" type="text" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1（或业务空间专属域名）" /></div>
+      <div class="settings-row"><label>视觉模型 API Key</label><input data-field="vision_api_key" type="password" placeholder="留空表示不修改" autocomplete="off" /></div>
+      <div class="settings-row"><label>视觉模型名称</label><input data-field="vision_model" type="text" placeholder="qwen3.7-flash" /></div>
+      <div class="settings-row"><label>单帖最多理解图片</label><input data-field="vision_max_images" type="number" min="0" max="50" placeholder="10" /></div>
+      <div class="settings-row">
+        <label>选课社区</label>
+        <div class="settings-toggle-wrap">
+          <button id="courseCommunityBtn" class="settings-link-btn" type="button">配置选课社区…</button>
+          <span id="courseCommunityStatus" class="memory-count">未配置</span>
+        </div>
+      </div>
+    </div>
+    <div class="memory-footer">
+      <span id="settingsMsg" class="memory-count"></span>
+      <button id="settingsSaveBtn" class="memory-save-btn">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== 状态 ====================
+let currentConvId = null;
+let isStreaming = false;
+let allConversations = [];
+let abortController = null;   // 当前对话请求的 AbortController（用于停止生成）
+let controlledStop = false;   // 标记是否为用户主动停止（区别于网络错误）
+let switchingAway = false;    // 标记是否因切换会话而主动断开当前流（后台任务继续）
+
+// ==================== 工具函数 ====================
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+// ==================== 思考过程日志（可折叠 + 可视化分类）====================
+/**
+ * 日志行图标常量：内联 SVG（24×24 viewBox，fill 跟随类型 CSS 染色）。
+ * path 数据源自 Material Design Icons（Apache-2.0）/ MDI（MIT）开源图标库，
+ * 与顶部按钮 SVG 同源同风格，跨平台一致、可着色、零网络依赖。
+ */
+const STATUS_ICONS = {
+  question: '<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>',
+  think: '<svg viewBox="0 0 24 24"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
+  read: '<svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z"/></svg>',
+  browse: '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>',
+  user: '<svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
+  meta: '<svg viewBox="0 0 24 24"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>',
+  similar: '<svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>',
+  stats: '<svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg>',
+  deep: '<svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>',
+  deep_sub: '<svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4z"/></svg>',
+  done: '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>',
+  usage: '<svg viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>',
+  error: '<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
+  default: '<svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4z"/></svg>',
+};
+
+/**
+ * 分类单行日志，返回 {type, svg}。
+ * 按行首动词前缀匹配（替代脆弱的中文短语正则），新增工具零成本。
+ * usage 类型由调用方截获解析 token，不进内容区。
+ */
+function classifyLogLine(line) {
+  const s = String(line || '').trim();
+  if (!s) return { type: 'default', svg: STATUS_ICONS.default };
+  if (s.startsWith('└')) return { type: 'deep_sub', svg: STATUS_ICONS.deep_sub };
+  if (s.startsWith('提问：') || s.startsWith('提问:')) return { type: 'question', svg: STATUS_ICONS.question };
+  if (s.startsWith('思考：') || s.startsWith('思考:')) return { type: 'think', svg: STATUS_ICONS.think };
+  if (s.startsWith('搜索')) return { type: 'search', svg: STATUS_ICONS.search };
+  if (s.startsWith('读取')) return { type: 'read', svg: STATUS_ICONS.read };
+  if (s.startsWith('浏览')) return { type: 'browse', svg: STATUS_ICONS.browse };
+  if (s.indexOf('相关帖子') >= 0) return { type: 'similar', svg: STATUS_ICONS.similar };
+  if (s.indexOf('热度') >= 0) return { type: 'stats', svg: STATUS_ICONS.stats };
+  if (s.startsWith('查询') || s.indexOf('资料') >= 0) return { type: 'user', svg: STATUS_ICONS.user };
+  if (s.startsWith('论坛标签') || s.startsWith('论坛版块')) return { type: 'meta', svg: STATUS_ICONS.meta };
+  if (s.startsWith('深读')) return { type: 'deep', svg: STATUS_ICONS.deep };
+  if (s.startsWith('完成')) return { type: 'done', svg: STATUS_ICONS.done };
+  if (s.startsWith('消耗')) return { type: 'usage', svg: STATUS_ICONS.usage };
+  if (s.startsWith('错误') || s.indexOf('已停止生成') >= 0 || s.indexOf('已达最大') >= 0
+      || s.indexOf('[错误]') >= 0 || s.indexOf('[连接错误]') >= 0) return { type: 'error', svg: STATUS_ICONS.error };
+  return { type: 'default', svg: STATUS_ICONS.default };
+}
+
+/**
+ * 把单行 status 文本渲染为 HTML：先 HTML 转义（防 XSS，复用 escapeHtml），
+ * 再把 #编号 或 #编号《标题》 替换为可点击链接（指向论坛帖子页）。
+ * 标题可选：旧历史记录只有 #编号 也渲染为链接。
+ */
+function renderStatusText(text) {
+  const escaped = escapeHtml(text);
+  return escaped.replace(/#(\d+)(?:《([^》]*)》)?/g, (m, id, title) => {
+    const label = title ? `#${id}《${title}》` : `#${id}`;
+    return `<a href="https://shuiyuan.sjtu.edu.cn/t/${id}" target="_blank" rel="noopener" class="topic-link">${label}</a>`;
+  });
+}
+
+/**
+ * 创建 .status-log 容器（含摘要行 + 内容区）。
+ * 摘要行含图标、步数文本、token chip（默认隐藏）、折叠箭头；点击翻转折叠并标记用户已手动操作。
+ * @return {{log: HTMLElement, body: HTMLElement, summaryText: HTMLElement, summaryTokens: HTMLElement}}
+ */
+function createStatusLog() {
+  const log = el('div', 'status-log');
+  log.dataset.collapsed = 'false';
+  log.dataset.userToggled = 'false';
+  const summary = el('div', 'status-summary');
+  summary.title = '点击展开/折叠思考过程';
+  const sumIcon = el('span', 'status-summary-icon');
+  sumIcon.innerHTML = STATUS_ICONS.think;
+  const sumText = el('span', 'status-summary-text', '思考过程 · 0 步');
+  const sumTokens = el('span', 'status-summary-tokens');
+  sumTokens.style.display = 'none';
+  const toggle = el('span', 'status-toggle', '▾');
+  summary.appendChild(sumIcon);
+  summary.appendChild(sumText);
+  summary.appendChild(sumTokens);
+  summary.appendChild(toggle);
+  const body = el('div', 'status-body');
+  summary.addEventListener('click', () => {
+    log.dataset.userToggled = 'true';
+    toggleStatusLog(log, log.dataset.collapsed === 'true');
+  });
+  log.appendChild(summary);
+  log.appendChild(body);
+  return { log: log, body: body, summaryText: sumText, summaryTokens: sumTokens };
+}
+
+/**
+ * 追加一条 status 文本到日志内容区（按行拆分、分类、链接化）。
+ * - 按 \n 拆行，跳过纯空行（处理 [Agent] 日志首尾的 \n）
+ * - usage 行：解析 token 数字并调 updateStatusTokens，不进内容区
+ * - 其余行：分类 → 创建 .status-line-row → #编号《》链接化 → state.steps++
+ * @param {HTMLElement} body 内容区元素
+ * @param {object} refs {summaryText, summaryTokens}
+ * @param {object} state {steps} 步数累加器
+ * @param {string} text status 文本
+ */
+function appendStatusLog(body, refs, state, text) {
+  const str = String(text || '');
+  const trimmed = str.trimStart();
+  // 思考增量：追加到当前思考块（流式输出）
+  if (trimmed.startsWith('思考+')) {
+    if (state.currentThink) state.currentThink.append(trimmed.slice(3));
+    return;
+  }
+  // 思考结束：flush 剩余增量并收起当前思考块
+  if (trimmed.startsWith('思考=')) {
+    if (state.currentThink) {
+      state.currentThink.finish();
+      state.currentThink = null;
+    }
+    return;
+  }
+  // 思考开始：新建思考块（流式过程中展开，结束后由"思考="收起）
+  if (trimmed.startsWith('思考：') || trimmed.startsWith('思考:')) {
+    state.currentThink = appendThinkBlock(body, trimmed.replace(/^思考[：:]/, ''));
+    state.steps = (state.steps || 0) + 1;
+    updateStatusSummarySteps(refs.summaryText, state.steps || 0);
+    return;
+  }
+  // 收到非思考 status：若有未结束的思考块，先收起（兜底，防止思考块一直展开）
+  if (state.currentThink) {
+    state.currentThink.finish();
+    state.currentThink = null;
+  }
+  const lines = str.split('\n');
+  for (const raw of lines) {
+    if (raw.trim() === '') continue;
+    const cls = classifyLogLine(raw);
+    if (cls.type === 'usage') {
+      const m = raw.match(/消耗\s*输入\s*(\d+)\s*\/\s*输出\s*(\d+)\s*\/\s*总计\s*(\d+)\s*tokens/);
+      if (m) updateStatusTokens(refs.summaryTokens, +m[1], +m[2], +m[3]);
+      continue;
+    }
+    const subCls = cls.type === 'deep_sub' ? ' status-sub' : '';
+    const row = el('div', 'status-line-row status-type-' + cls.type + subCls);
+    const icon = el('span', 'status-line-icon');
+    icon.innerHTML = cls.svg;
+    row.appendChild(icon);
+    const txt = el('span', 'status-line-text');
+    txt.innerHTML = renderStatusText(raw.trim());
+    row.appendChild(txt);
+    body.appendChild(row);
+    state.steps = (state.steps || 0) + 1;
+  }
+  updateStatusSummarySteps(refs.summaryText, state.steps || 0);
+}
+
+/**
+ * 追加一个可折叠的思考链块，支持流式追加（思考过程中展开可见，结束后收起）。
+ * @param {HTMLElement} body 内容区元素
+ * @param {string} firstChunk 思考首段文本（已去掉"思考："前缀）
+ * @return {object} 控制器 {append, finish}，供流式追加与结束收起调用
+ */
+function appendThinkBlock(body, firstChunk) {
+  const row = el('div', 'status-line-row status-type-think think-block');
+  row.dataset.collapsed = 'false';  // 流式过程中展开
+  const icon = el('span', 'status-line-icon');
+  icon.innerHTML = STATUS_ICONS.think;
+  row.appendChild(icon);
+  const txt = el('span', 'status-line-text');
+  const summary = el('span', 'think-toggle', '思考 ▾');
+  const full = el('span', 'think-full');
+  full.style.display = 'block';
+  txt.appendChild(summary);
+  txt.appendChild(full);
+  row.appendChild(txt);
+  row.style.cursor = 'pointer';
+
+  const ctrl = {
+    row: row, summary: summary, full: full,
+    text: firstChunk,
+    pending: '',
+    raf: 0,
+    /** 追加一段思考增量（用 requestAnimationFrame 节流，避免逐 chunk 刷新卡顿）。 */
+    append(chunk) {
+      this.pending += chunk;
+      if (!this.raf) {
+        this.raf = requestAnimationFrame(() => {
+          this.raf = 0;
+          this.text += this.pending;
+          this.pending = '';
+          this.full.innerHTML = renderStatusText(this.text);
+        });
+      }
+    },
+    /** 思考结束：flush 剩余增量并收起。 */
+    finish() {
+      if (this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
+      if (this.pending) { this.text += this.pending; this.pending = ''; }
+      this.full.innerHTML = renderStatusText(this.text);
+      this.row.dataset.collapsed = 'true';
+      this.summary.textContent = '思考 ▸';
+      this.full.style.display = 'none';
+    },
+  };
+  ctrl.full.innerHTML = renderStatusText(firstChunk);
+
+  // 用户手动点击切换展开/收起
+  row.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const collapsed = row.dataset.collapsed === 'true';
+    row.dataset.collapsed = collapsed ? 'false' : 'true';
+    summary.textContent = collapsed ? '思考 ▾' : '思考 ▸';
+    full.style.display = collapsed ? 'block' : 'none';
+  });
+  body.appendChild(row);
+  return ctrl;
+}
+
+/** 更新摘要行步数。 */
+function updateStatusSummarySteps(summaryText, steps) {
+  summaryText.textContent = '思考过程 · ' + steps + ' 步';
+}
+
+/** 更新摘要行 token 显示（输入/输出/总计）。 */
+function updateStatusTokens(tokensEl, p, c, t) {
+  tokensEl.innerHTML = STATUS_ICONS.usage + ' ' + p + ' / ' + c + ' / ' + t + ' tokens';
+  tokensEl.title = '输入 ' + p + ' · 输出 ' + c + ' · 总计 ' + t + ' tokens';
+  tokensEl.style.display = '';
+}
+
+/** 用户手动点击切换：翻转折叠状态。 */
+function toggleStatusLog(log, expand) {
+  log.dataset.collapsed = expand ? 'false' : 'true';
+  const toggle = log.querySelector('.status-toggle');
+  if (toggle) toggle.textContent = expand ? '▾' : '▸';
+}
+
+/**
+ * 程序化设置折叠状态。
+ * @param {HTMLElement} log 容器
+ * @param {boolean} collapsed 是否折叠
+ * @param {boolean} force 是否覆盖用户手动选择（done 自动折叠、历史加载折叠都用 force=false）
+ */
+function setStatusLogCollapsed(log, collapsed, force) {
+  if (!force && log.dataset.userToggled === 'true') return;
+  log.dataset.collapsed = collapsed ? 'true' : 'false';
+  const toggle = log.querySelector('.status-toggle');
+  if (toggle) toggle.textContent = collapsed ? '▸' : '▾';
+}
+
+function renderMarkdown(text) {
+  const raw = marked.parse(text || "");
+  return DOMPurify.sanitize(raw);
+}
+
+// ==================== 会话管理 ====================
+async function loadConversations() {
+  const res = await fetch('/api/conversations');
+  const data = await res.json();
+  renderSidebar(data.conversations);
+}
+
+/**
+ * 按创建时间将会话归入日期分组（今天 / 近7天 / 近30天 / 更早）。
+ * created_at 为后端本地时间 ISO 字符串，与浏览器本地时间一致。
+ * @param {string} createdAt 会话创建时间（ISO 字符串）
+ * @param {Date} now 当前时间
+ * @returns {string} 分组标签
+ */
+function dateGroupLabel(createdAt, now) {
+  if (!createdAt) return '更早';
+  const d = new Date(createdAt);
+  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.floor((day0 - day) / 86400000);
+  if (days <= 0) return '今天';
+  if (days <= 7) return '近7天';
+  if (days <= 30) return '近30天';
+  return '更早';
+}
+
+function renderSidebar(list) {
+  allConversations = list;
+  const box = document.getElementById('convList');
+  box.innerHTML = '';
+  // 先按日期分组，再按固定顺序输出（今天→近7天→近30天→更早）
+  const now = new Date();
+  const groups = new Map();
+  const order = ['今天', '近7天', '近30天', '更早'];
+  list.forEach(c => {
+    const label = dateGroupLabel(c.created_at, now);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(c);
+  });
+  order.forEach(label => {
+    const items = groups.get(label);
+    if (!items || !items.length) return;
+    box.appendChild(el('div', 'conv-group-header', label));
+    items.forEach(c => {
+      const item = el('div', 'conv-item' + (c.id === currentConvId ? ' active' : ''), c.title);
+      item.title = c.title;
+      item.dataset.convId = c.id;
+      item.addEventListener('click', () => switchConversation(c.id));
+      const edit = el('span', 'edit', '✎');
+      edit.title = '重命名';
+      edit.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        startRename(item, c.id, c.title);
+      });
+      item.appendChild(edit);
+      const del = el('span', 'del', '✕');
+      del.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        await fetch('/api/conversations/' + c.id, { method: 'DELETE' });
+        if (currentConvId === c.id) await newConversation();
+        await loadConversations();
+      });
+      item.appendChild(del);
+      box.appendChild(item);
+    });
+  });
+}
+
+/** 进入会话重命名编辑态：标题文本替换为输入框，回车保存、Esc/失焦取消。 */
+function startRename(item, convId, oldTitle) {
+  const input = el('input', 'rename-input');
+  input.value = oldTitle;
+  item.textContent = '';
+  item.appendChild(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const newTitle = input.value.trim();
+    if (save && newTitle && newTitle !== oldTitle) {
+      try {
+        const res = await fetch('/api/conversations/' + convId + '/rename', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newTitle }),
+        });
+        if (res.ok) {
+          // 更新本地列表与当前会话展示
+          const c = allConversations.find(x => x.id === convId);
+          if (c) c.title = newTitle;
+          renderSidebar(allConversations);
+          return;
+        }
+      } catch (e) { /* 保存失败则回退为原标题 */ }
+    }
+    // 取消或保存失败：恢复原标题展示
+    item.textContent = oldTitle;
+  };
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+async function newConversation() {
+  // 运行中新建会话：中止当前前端流（后台任务继续执行并持久化）
+  if (isStreaming && abortController) {
+    switchingAway = true;
+    abortController.abort();
+  }
+  // 不立即 POST 创建会话，避免空对话入库；
+  // 实际会话在用户发送首条消息时由 sendMessage 按需创建。
+  currentConvId = null;
+  clearChat();
+  // 取消历史栏其他项的 active 高亮
+  document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
+}
+
+async function switchConversation(id) {
+  // 运行中切换会话：中止当前前端流，让后台任务继续执行并持久化结果
+  if (isStreaming && abortController) {
+    switchingAway = true;
+    abortController.abort();
+  }
+  currentConvId = id;
+  clearChat();
+  // 并行加载消息历史与思考链路日志
+  const [msgRes, statusRes] = await Promise.all([
+    fetch('/api/conversations/' + id + '/messages'),
+    fetch('/api/conversations/' + id + '/status')
+  ]);
+  const msgData = await msgRes.json();
+  const statusData = await statusRes.json();
+  // 合并消息与思考链路日志，按时间顺序统一渲染（还原"提问→执行→回答"的完整过程）
+  const events = [];
+  (msgData.messages || []).forEach(m => events.push({ time: m.created_at, role: m.role, content: m.content }));
+  (statusData.logs || []).forEach(l => events.push({ time: l.created_at, status: l.content }));
+  events.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  // status 先累积，随后出现的 assistant 消息气泡内渲染进它的 status-line，
+  // 使刷新后的效果与运行时一致（思考链路灰字显示在助手气泡内，而非背景板裸文字）
+  let pendingStatuses = [];
+  const flushPendingStatuses = () => {
+    if (pendingStatuses.length) {
+      addStatusLine(pendingStatuses.join('\n'));
+      pendingStatuses = [];
+    }
+  };
+  events.forEach(ev => {
+    if (ev.status !== undefined) {
+      pendingStatuses.push(ev.status);
+    } else if (ev.role === 'user') {
+      flushPendingStatuses();  // 上一轮未配对的 status（异常结尾）单独展示
+      addMessage('user', ev.content);
+    } else {
+      const row = addMessage('assistant', ev.content);
+      const refs = row._statusRefs;
+      if (pendingStatuses.length) {
+        const st = { steps: 0, usage: null };
+        pendingStatuses.forEach(s => appendStatusLog(refs.body, refs, st, s));
+        pendingStatuses = [];
+      }
+      // 有思考日志则折叠展示，无则隐藏容器（避免空"思考过程 · 0 步"）
+      if (refs.body.children.length > 0) {
+        setStatusLogCollapsed(refs.log, true, false);
+      } else {
+        refs.log.style.display = 'none';
+      }
+      row.querySelector('.md-content').innerHTML = renderMarkdown(ev.content);
+      // 历史消息同样在气泡左下角外部添加操作按钮（复制 / 重新生成）
+      attachMessageActions(row, ev.content);
+    }
+  });
+  flushPendingStatuses();  // 会话末尾可能残留（如任务未完成被中断）
+  await loadConversations();
+  // 尝试恢复该会话运行中的任务订阅（刷新/切换回来后实时续传）
+  resumeStream(id);
+}
+
+/**
+ * 在聊天区追加一段思考过程日志（历史思考链路单独展示用，含统一气泡框）。
+ * 正常路径下 status 会合并进 assistant 气泡；此函数仅用于异常残留日志兜底。
+ * 使用可折叠日志容器，默认折叠。
+ */
+function addStatusLine(content) {
+  const area = document.getElementById('chatArea');
+  const empty = document.getElementById('emptyHint');
+  if (empty) empty.remove();
+  const row = el('div', 'msg-row assistant');
+  const inner = el('div', 'inner');
+  const bubble = el('div', 'bubble');
+  const refs = createStatusLog();
+  const state = { steps: 0, usage: null };
+  // 按 \n 拆行逐条处理，使思考流式前缀（思考：/思考+/思考=）能被正确识别
+  String(content || '').split('\n').forEach(line => {
+    if (line.trim() !== '') appendStatusLog(refs.body, refs, state, line);
+  });
+  setStatusLogCollapsed(refs.log, true, false);  // 兜底日志默认折叠
+  bubble.appendChild(refs.log);
+  inner.appendChild(bubble);
+  row.appendChild(inner);
+  area.appendChild(row);
+  area.scrollTop = area.scrollHeight;
+  return row;
+}
+
+/**
+ * 恢复订阅某个会话正在运行的任务（刷新/切换会话后重新连接）。
+ * 后端会先重放已生成的 token 快照，再实时转发后续 status/token/done 事件。
+ */
+async function resumeStream(convId) {
+  if (isStreaming) return;  // 已有活动流（正在发送），不重复订阅
+  let res;
+  try {
+    res = await fetch('/api/chat/stream/' + convId);
+  } catch (e) { return; }
+  if (!res.ok || !res.body) return;
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  // 收到首个内容事件时才创建气泡，避免任务已结束时出现空气泡
+  let row = null, statusRefs = null, mdEl = null;
+  const state = { doneReceived: false, rawText: '', renderScheduled: false, steps: 0, usage: null };
+  let gotEvent = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop();
+    for (const ev of events) {
+      const lines = ev.split('\n');
+      const type = (lines.find(l => l.startsWith('event:')) || '').slice(6).trim();
+      const dataLine = lines.find(l => l.startsWith('data:'));
+      if (!dataLine) continue;
+      let data;
+      try { data = JSON.parse(dataLine.slice(5).trim()); } catch (e) { continue; }
+      gotEvent = true;
+      if (!row && (type === 'token' || type === 'status' || type === 'usage')) {
+        row = addMessage('assistant', '');
+        statusRefs = row._statusRefs;
+        mdEl = row.querySelector('.md-content');
+      }
+      if (type === 'status' && statusRefs) {
+        appendStatusLog(statusRefs.body, statusRefs, state, data.message);
+      } else if (type === 'token' && mdEl) {
+        // 快照 token 是完整累积文本，追加到空 rawText 即为全量；后续为增量
+        state.rawText += data.text;
+        scheduleMarkdownRender(mdEl, state);
+      } else if (type === 'usage' && statusRefs) {
+        const p = data.prompt_tokens != null ? data.prompt_tokens : 0;
+        const c = data.completion_tokens != null ? data.completion_tokens : 0;
+        const t = data.total_tokens != null ? data.total_tokens : (p + c);
+        state.usage = { p: p, c: c, t: t };
+        updateStatusTokens(statusRefs.summaryTokens, p, c, t);
+      } else if (type === 'done') {
+        state.doneReceived = true;
+        if (data.answer) {
+          state.rawText = data.answer;
+          if (mdEl) mdEl.innerHTML = renderMarkdown(data.answer);
+        }
+        // 回答完成：有思考日志则折叠，无则隐藏容器（避免空摘要行）
+        if (statusRefs) {
+          if (state.steps > 0 || state.usage) {
+            setStatusLogCollapsed(statusRefs.log, true, false);
+          } else {
+            statusRefs.log.style.display = 'none';
+          }
+        }
+        // 气泡左下角外部添加操作按钮（复制 / 重新生成）
+        const rowEl = mdEl ? mdEl.closest('.msg-row') : null;
+        if (rowEl) attachMessageActions(rowEl, state.rawText);
+      } else if (type === 'error' && statusRefs) {
+        appendStatusLog(statusRefs.body, statusRefs, state, '\n[错误] ' + data.message);
+      }
+    }
+  }
+  // 兜底：流结束未收到 done 且已有内容，用累积文本渲染
+  if (row && !state.doneReceived && state.rawText) {
+    mdEl.innerHTML = renderMarkdown(state.rawText);
+  }
+  // 无任何事件（任务已完成/不存在）：不创建气泡，静默结束
+  if (!gotEvent && row) {
+    row.remove();
+  }
+}
+
+// ==================== 聊天区 ====================
+function clearChat() {
+  const area = document.getElementById('chatArea');
+  area.innerHTML = '<div id="emptyHint">向水源社区提问，Agent 会帮你搜索、读帖并总结。</div>';
+}
+
+function addMessage(role, content) {
+  const area = document.getElementById('chatArea');
+  const empty = document.getElementById('emptyHint');
+  if (empty) empty.remove();
+  const row = el('div', 'msg-row ' + role);
+  const inner = el('div', 'inner');
+  const bubble = el('div', 'bubble');
+  if (role === 'user') {
+    bubble.textContent = content;
+    row.dataset.question = content;  // 记录问题文本，供"重新生成"按钮找回对应问题
+  } else {
+    const statusLog = createStatusLog();
+    const md = el('div', 'md-content');
+    if (content) md.innerHTML = renderMarkdown(content);
+    bubble.appendChild(statusLog.log);
+    bubble.appendChild(md);
+    row._statusRefs = statusLog;  // 供调用方（sendMessage/resumeStream/switchConversation）取用
+  }
+  inner.appendChild(bubble);
+  row.appendChild(inner);
+  area.appendChild(row);
+  area.scrollTop = area.scrollHeight;
+  // 用户气泡：右下角添加复制 / 编辑按钮（助手气泡的按钮在流式完成后另行挂载）
+  if (role === 'user') attachUserMessageActions(row, content);
+  return row;
+}
+
+/** 轻提示：页面顶部短暂显示的灰色小条，自动消失。 */
+let _toastTimer = null;
+function showToast(msg) {
+  let toast = document.getElementById('globalToast');
+  if (!toast) {
+    toast = el('div', '');
+    toast.id = 'globalToast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add('toast-show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => toast.classList.remove('toast-show'), 1800);
+}
+
+/** 触发浏览器下载一个 Blob 为文件。 */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = el('a', '');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** 把任意文本清理为安全文件名：去 Windows 非法字符、限长 30 字。 */
+function safeFilename(text) {
+  const s = (text || '回答').trim().replace(/\s+/g, ' ').slice(0, 30).replace(/[\\/:*?"<>|]/g, '_');
+  return s || '回答';
+}
+
+/** 粗略把 markdown 转成纯文本（去语法符号、保留可读内容），用于 TXT 导出与文件名。 */
+function markdownToText(md) {
+  if (!md) return '';
+  return md
+    .replace(/```[\w]*\n([\s\S]*?)```/g, (_, c) => '\n' + c + '\n')   // 代码块：保留内容
+    .replace(/`([^`\n]+)`/g, '$1')                                   // 行内代码
+    .replace(/^#{1,6}\s+/gm, '')                                     // 标题
+    .replace(/\*\*([^*]+)\*\*/g, '$1')                               // 粗体
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1$2')                       // 斜体
+    .replace(/^\s*[-*+]\s+/gm, '• ')                                 // 无序列表
+    .replace(/^\s*\d+\.\s+/gm, '')                                   // 有序列表
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')                        // 图片 alt
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')                         // 链接文本
+    .replace(/^>\s+/gm, '')                                          // 引用
+    .replace(/\n{3,}/g, '\n\n')                                      // 折叠多余空行
+    .trim();
+}
+
+/** 取某条助手回答对应的提问文本（向上找最近的用户消息），用作导出文件名。 */
+function findQuestionOf(row) {
+  let q = row.previousElementSibling;
+  while (q) {
+    if (q.classList && q.classList.contains('msg-row') && q.classList.contains('user')) return q.dataset.question || '';
+    q = q.previousElementSibling;
+  }
+  return '';
+}
+
+/** 懒加载 html2canvas：首次导出图片时从 CDN 引入，之后缓存复用。环境需联网（与调用 LLM 一致）。 */
+let _html2canvasPromise = null;
+function loadHtml2Canvas() {
+  if (_html2canvasPromise) return _html2canvasPromise;
+  _html2canvasPromise = new Promise((resolve, reject) => {
+    if (window.html2canvas) { resolve(window.html2canvas); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    s.onload = () => window.html2canvas ? resolve(window.html2canvas) : reject(new Error('html2canvas 加载失败'));
+    s.onerror = () => { _html2canvasPromise = null; reject(new Error('网络加载失败，请检查网络')); };
+    document.head.appendChild(s);
+  });
+  return _html2canvasPromise;
+}
+
+/** 导出为 TXT 文件：markdown 转纯文本后下载。 */
+function exportAsTxt(md, name) {
+  downloadBlob(new Blob([markdownToText(md)], { type: 'text/plain;charset=utf-8' }), name + '.txt');
+  showToast('已导出 TXT');
+}
+
+/** 导出为 Markdown 文件：直接下载原始 markdown 文本。 */
+function exportAsMarkdown(md, name) {
+  downloadBlob(new Blob([md || ''], { type: 'text/markdown;charset=utf-8' }), name + '.md');
+  showToast('已导出 Markdown');
+}
+
+/** 导出为 PDF：打开新窗口写入排版好的回答并调用浏览器打印，用户在打印对话框选"另存为 PDF"。 */
+function exportAsPdf(md) {
+  const html = renderMarkdown(md || '');
+  const w = window.open('', '_blank');
+  if (!w) { showToast('请允许弹窗以导出 PDF'); return; }
+  w.document.write('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>水源社区 Agent 回答</title>'
+    + '<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 24px;color:#1f1f1f;line-height:1.75;font-size:14.5px;}'
+    + 'h1,h2,h3{line-height:1.4;}h1{font-size:20px;}h2{font-size:17px;}h3{font-size:15px;}'
+    + 'pre{background:#f6f6f8;padding:12px 14px;border-radius:6px;overflow:auto;}code{font-family:Consolas,"Courier New",monospace;background:#f0f0f2;padding:2px 5px;border-radius:3px;font-size:13px;}pre code{background:none;padding:0;}'
+    + 'blockquote{border-left:3px solid #10a37f;margin:8px 0;padding:4px 14px;color:#666;}table{border-collapse:collapse;margin:10px 0;}th,td{border:1px solid #ddd;padding:6px 10px;}img{max-width:100%;}'
+    + '@media print{body{margin:0;}}</style></head><body>' + html + '</body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(() => { try { w.print(); } catch (e) {} }, 350);
+  showToast('已在打印窗口打开，选择"另存为 PDF"');
+}
+
+/** 导出为图片（PNG）：用 html2canvas 把渲染后的回答截成 canvas 再下载。html2canvas 首次使用时从 CDN 懒加载。 */
+async function exportAsImage(row, name) {
+  const source = row.querySelector('.md-content');
+  if (!source) { showToast('无可导出内容'); return; }
+  showToast('正在生成图片…');
+  try {
+    const html2canvas = await loadHtml2Canvas();
+    // 临时离屏容器：加白底与内边距保证导出美观；离屏（left:-99999px）避免页面闪烁
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-99999px;top:0;padding:28px 32px;background:#ffffff;width:720px;box-sizing:border-box;';
+    const clone = source.cloneNode(true);
+    clone.querySelectorAll('.cursor').forEach(n => n.remove());   // 移除流式光标等临时元素
+    const mdDiv = document.createElement('div');
+    mdDiv.className = 'md-content';
+    mdDiv.appendChild(clone);
+    wrap.appendChild(mdDiv);
+    document.body.appendChild(wrap);
+    const canvas = await html2canvas(wrap, {
+      scale: 2,                // 2 倍像素，提升清晰度
+      backgroundColor: '#ffffff',
+      useCORS: true,           // 尝试跨域加载图片（无 CORS 头的图片仍可能渲染为空）
+      logging: false,
+    });
+    document.body.removeChild(wrap);
+    canvas.toBlob(blob => {
+      if (blob) { downloadBlob(blob, name + '.png'); showToast('已导出图片'); }
+      else showToast('图片导出失败');
+    }, 'image/png');
+  } catch (e) {
+    showToast('图片导出失败：' + (e && e.message ? e.message : '未知错误'));
+  }
+}
+
+/**
+ * 在助手气泡左下角外部添加操作按钮：复制回答 / 重新生成。
+ * - 复制：把回答的原始 markdown 文本复制到剪贴板；
+ * - 重新生成：仅对最后一条回答生效，移除该气泡后以 regenerate 模式重跑同一问题。
+ * @param {HTMLElement} row 助手消息行（.msg-row.assistant）
+ * @param {string} answerText 回答的原始 markdown 文本
+ */
+function attachMessageActions(row, answerText) {
+  if (row.querySelector('.msg-actions')) return;
+  const actions = el('div', 'msg-actions');
+  // 复制按钮（图标：剪贴板）
+  const copyBtn = el('button', 'action-btn');
+  copyBtn.title = '复制回答';
+  copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(answerText || '');
+      showToast('已复制回答');
+    } catch (e) {
+      showToast('复制失败');
+    }
+  });
+  actions.appendChild(copyBtn);
+  // 重新生成按钮（图标：旋转箭头）
+  const regenBtn = el('button', 'action-btn');
+  regenBtn.title = '重新生成';
+  regenBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>';
+  regenBtn.addEventListener('click', () => {
+    if (isStreaming) return;
+    // 仅允许重新生成最后一条回答：其后仍有消息时给出提示
+    let sib = row.nextElementSibling;
+    while (sib) {
+      if (sib.classList.contains('msg-row')) { showToast('只能重新生成最新一条回答'); return; }
+      sib = sib.nextElementSibling;
+    }
+    // 找回对应问题（取聊天区最后一个用户消息，即最近一问）
+    const users = document.querySelectorAll('#chatArea .msg-row.user');
+    const question = users.length ? users[users.length - 1].dataset.question : '';
+    if (!question) return;
+    row.remove();
+    sendMessage(true, question);  // regenerate 模式重跑
+  });
+  actions.appendChild(regenBtn);
+  // 分享按钮（图标：分享节点）+ 下拉菜单：导出 TXT / Markdown / PDF / 图片
+  const shareBtn = el('button', 'action-btn');
+  shareBtn.title = '分享';
+  shareBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>';
+  let shareMenu = null;
+  function closeShareMenu() {
+    if (shareMenu) { shareMenu.remove(); shareMenu = null; document.removeEventListener('mousedown', onShareOutside, true); }
+  }
+  function onShareOutside(e) {
+    if (shareMenu && !shareMenu.contains(e.target) && !shareBtn.contains(e.target)) closeShareMenu();
+  }
+  shareBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (shareMenu) { closeShareMenu(); return; }
+    // 文件名优先用对应提问，其次用回答首段，最后兜底"回答"
+    const baseName = safeFilename(findQuestionOf(row) || markdownToText(answerText) || '回答');
+    shareMenu = el('div', 'share-menu');
+    const opts = [
+      ['txt', '导出为 TXT', () => exportAsTxt(answerText, baseName)],
+      ['md', '导出为 Markdown', () => exportAsMarkdown(answerText, baseName)],
+      ['pdf', '导出为 PDF', () => exportAsPdf(answerText)],
+      ['img', '导出为图片', () => exportAsImage(row, baseName)],
+    ];
+    opts.forEach(([, label, fn]) => {
+      const b = el('button', 'share-item');
+      b.textContent = label;
+      b.addEventListener('click', () => { closeShareMenu(); fn(); });
+      shareMenu.appendChild(b);
+    });
+    document.body.appendChild(shareMenu);
+    const rect = shareBtn.getBoundingClientRect();
+    const menuH = shareMenu.offsetHeight;
+    const menuW = 172;
+    // 垂直定位：下方放不下则改为向上展开，避免菜单超出屏幕底部
+    let top;
+    if (rect.bottom + menuH + 8 > window.innerHeight) {
+      top = Math.max(8, rect.top - menuH - 4);
+    } else {
+      top = rect.bottom + 4;
+    }
+    shareMenu.style.top = top + 'px';
+    // 水平定位：右侧溢出则左移，保证不超出视口
+    let left = rect.left;
+    if (left + menuW > window.innerWidth - 8) left = window.innerWidth - menuW - 8;
+    if (left < 8) left = 8;
+    shareMenu.style.left = left + 'px';
+    setTimeout(() => document.addEventListener('mousedown', onShareOutside, true), 0);   // 延迟注册，避免本次 click 立即触发关闭
+  });
+  actions.appendChild(shareBtn);
+  row.querySelector('.inner').appendChild(actions);
+}
+
+/**
+ * 在用户气泡右下角添加操作按钮：复制提问 / 编辑提问。
+ * - 复制：把提问原文复制到剪贴板；
+ * - 编辑：仅对最近一条提问生效，把问题退回输入框供修改重发，同时移除该轮
+ *   气泡（本条用户问 + 其后助手答）并回退数据库（删除该轮消息与思考链路日志），
+ *   保证刷新后旧问答不残留。
+ * @param {HTMLElement} row 用户消息行（.msg-row.user）
+ * @param {string} questionText 提问原文
+ */
+function attachUserMessageActions(row, questionText) {
+  if (row.querySelector('.msg-actions')) return;
+  const actions = el('div', 'msg-actions user-actions');
+  // 复制按钮（图标与助手复制按钮一致：剪贴板）
+  const copyBtn = el('button', 'action-btn');
+  copyBtn.title = '复制提问';
+  copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(questionText || '');
+      showToast('已复制提问');
+    } catch (e) {
+      showToast('复制失败');
+    }
+  });
+  actions.appendChild(copyBtn);
+  // 编辑按钮（图标：铅笔）
+  const editBtn = el('button', 'action-btn');
+  editBtn.title = '编辑提问';
+  editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+  editBtn.addEventListener('click', () => {
+    if (isStreaming) { showToast('请等待当前生成结束'); return; }
+    // 仅允许修改最近一条提问：其后若还有用户消息则拒绝
+    const users = document.querySelectorAll('#chatArea .msg-row.user');
+    if (users[users.length - 1] !== row) { showToast('只能修改最近一条提问'); return; }
+    // 把问题退回输入框，供用户编辑后重新发送
+    input.value = questionText;
+    autosize();
+    input.focus();
+    // 移除本条用户气泡及其后所有气泡（助手回答等）
+    let sib = row.nextElementSibling;
+    while (sib && sib.classList.contains('msg-row')) {
+      const next = sib.nextElementSibling;
+      sib.remove();
+      sib = next;
+    }
+    row.remove();
+    // 后端回退：删除该轮问答及对应思考链路日志，避免刷新后残留
+    if (currentConvId) {
+      fetch('/api/conversations/' + currentConvId + '/rollback-last-user', { method: 'DELETE' })
+        .catch(() => { /* 回退失败不影响当前编辑，刷新时可能残留旧轮 */ });
+    }
+  });
+  actions.appendChild(editBtn);
+  row.querySelector('.inner').appendChild(actions);
+}
+
+// ==================== SSE 对话 ====================
+async function sendMessage(regenerate = false, regenQuestion = '') {
+  const input = document.getElementById('chatInput');
+  const question = regenerate ? regenQuestion.trim() : input.value.trim();
+  if (!question || isStreaming) return;
+
+  // 按需创建会话：用户首次发消息时才入库，避免空对话污染历史栏
+  if (!currentConvId) {
+    const res = await fetch('/api/conversations', { method: 'POST' });
+    const data = await res.json();
+    currentConvId = data.id;
+  }
+
+  // 重新生成模式不动输入框（复用上一条问题）；正常发送时清空输入
+  if (!regenerate) {
+    input.value = '';
+    autosize();
+  }
+  setStreaming(true);
+  controlledStop = false;
+  abortController = new AbortController();
+
+  // 重新生成模式不重复插入用户消息（原问题气泡仍在界面上）
+  if (!regenerate) addMessage('user', question);
+  const row = addMessage('assistant', '');
+  const statusRefs = row._statusRefs;
+  const mdEl = row.querySelector('.md-content');
+  // rawText: 累积的原始 markdown 文本（不能从 DOM 读，否则会丢失 **、## 等标记）
+  // renderScheduled: rAF 节流标志，避免高频 token 触发全量渲染
+  const state = { doneReceived: false, rawText: '', renderScheduled: false, steps: 0, usage: null };
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: currentConvId, question, regenerate, web_search: webSearchEnabled }),
+      signal: abortController.signal
+    });
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop();
+      for (const ev of events) handleSSE(ev, statusRefs, mdEl, state);
+    }
+  } catch (e) {
+    // 用户主动停止时中止流会抛 AbortError，仅提示已停止，不算连接错误
+    if (switchingAway) {
+      // 切换会话导致的中止：后台任务继续执行，无需提示
+    } else if (controlledStop) appendStatusLog(statusRefs.body, statusRefs, state, '\n[已停止生成]');
+    else appendStatusLog(statusRefs.body, statusRefs, state, '\n[连接错误] ' + e.message);
+  }
+
+  // 兜底：若流异常结束未收到 done 事件，用累积的原始文本渲染
+  if (!state.doneReceived && state.rawText && !switchingAway) {
+    mdEl.innerHTML = renderMarkdown(state.rawText);
+  }
+  switchingAway = false;
+  await loadConversations();
+  setStreaming(false);
+  abortController = null;
+}
+
+/**
+ * 停止生成：
+ * 1) abort 前端 fetch 流，立即停止接收/渲染新内容；
+ * 2) 通知后端置位取消信号，让 Agent 在最近的检查点中断，避免继续消耗 token。
+ */
+async function stopGeneration() {
+  controlledStop = true;
+  if (abortController) abortController.abort();
+  try {
+    await fetch('/api/stop', { method: 'POST' });
+  } catch (e) { /* 前端中止已生效，忽略 stop 接口异常 */ }
+}
+
+function scheduleMarkdownRender(mdEl, state) {
+  // 用 requestAnimationFrame 节流：合并高频 token 增量，每帧最多渲染一次
+  if (state.renderScheduled) return;
+  state.renderScheduled = true;
+  requestAnimationFrame(() => {
+    state.renderScheduled = false;
+    if (state.doneReceived) return;  // done 已渲染干净答案，跳过待渲染帧
+    const cursor = el('span', 'cursor');
+    mdEl.innerHTML = renderMarkdown(state.rawText);
+    mdEl.appendChild(cursor);
+    const area = document.getElementById('chatArea');
+    // 仅在用户已贴近底部时自动跟随流式输出；用户主动上滚浏览时保留其位置
+    const nearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 50;
+    if (nearBottom) area.scrollTop = area.scrollHeight;
+  });
+}
+
+function handleSSE(raw, statusRefs, mdEl, state) {
+  const lines = raw.split('\n');
+  const type = (lines.find(l => l.startsWith('event:')) || '').slice(6).trim();
+  const dataLine = lines.find(l => l.startsWith('data:'));
+  if (!dataLine) return;
+  let data;
+  try { data = JSON.parse(dataLine.slice(5).trim()); } catch (e) { return; }
+
+  if (type === 'status') {
+    appendStatusLog(statusRefs.body, statusRefs, state, data.message);
+  } else if (type === 'token') {
+    // 累积原始 markdown 文本并实时渲染（含光标），实现流式 markdown 显示
+    state.rawText += data.text;
+    scheduleMarkdownRender(mdEl, state);
+  } else if (type === 'usage') {
+    // 展示本次任务（含工具调用/深度阅读）的 token 消耗（更新摘要行 chip，不进内容区）
+    const p = data.prompt_tokens != null ? data.prompt_tokens : 0;
+    const c = data.completion_tokens != null ? data.completion_tokens : 0;
+    const t = data.total_tokens != null ? data.total_tokens : (p + c);
+    state.usage = { p: p, c: c, t: t };
+    updateStatusTokens(statusRefs.summaryTokens, p, c, t);
+  } else if (type === 'done') {
+    // 用后端返回的完整回答渲染（不含工具轮思考文字），保证与历史记录一致
+    state.doneReceived = true;
+    if (data.answer) {
+      state.rawText = data.answer;
+      mdEl.innerHTML = renderMarkdown(data.answer);
+    }
+    // 回答完成：有思考日志则折叠，无则隐藏容器（避免空摘要行）
+    if (state.steps > 0 || state.usage) {
+      setStatusLogCollapsed(statusRefs.log, true, false);
+    } else {
+      statusRefs.log.style.display = 'none';
+    }
+    // 气泡左下角外部添加操作按钮（复制 / 重新生成）
+    const rowEl = mdEl ? mdEl.closest('.msg-row') : null;
+    if (rowEl) attachMessageActions(rowEl, state.rawText);
+  } else if (type === 'error') {
+    appendStatusLog(statusRefs.body, statusRefs, state, '\n[错误] ' + data.message);
+  }
+}
+
+// ==================== 输入框 ====================
+const input = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+const newBtn = document.getElementById('newBtn');
+
+function autosize() {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  if (!isStreaming) sendBtn.disabled = !input.value.trim();
+}
+
+input.addEventListener('input', autosize);
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+// 流式生成期间按钮变为"停止"：点击停止生成；空闲时点击发送
+sendBtn.addEventListener('click', () => {
+  if (isStreaming) stopGeneration();
+  else sendMessage();
+});
+// 联网搜索开关：状态持久化到 localStorage，默认开启；点击切换并发送给后端控制 search_web/read_url/search_github 可用性
+const webBtn = document.getElementById('webBtn');
+let webSearchEnabled = localStorage.getItem('webSearch') !== 'false';  // 未存过视为开启
+function updateWebBtn() {
+  webBtn.classList.toggle('off', !webSearchEnabled);
+  webBtn.title = webSearchEnabled ? '联网搜索：开启（点击关闭）' : '联网搜索：关闭（点击开启）';
+}
+updateWebBtn();
+webBtn.addEventListener('click', () => {
+  if (isStreaming) return;  // 流式生成期间禁止切换，避免影响正在执行的任务
+  webSearchEnabled = !webSearchEnabled;
+  localStorage.setItem('webSearch', webSearchEnabled ? 'true' : 'false');
+  updateWebBtn();
+});
+newBtn.addEventListener('click', newConversation);
+
+const searchBtn = document.getElementById('searchBtn');
+const collapseBtn = document.getElementById('collapseBtn');
+const expandBtn = document.getElementById('expandBtn');
+const searchOverlay = document.getElementById('searchOverlay');
+const searchModalInput = document.getElementById('searchModalInput');
+const searchCloseBtn = document.getElementById('searchCloseBtn');
+
+/** 打开搜索浮层：清空输入、渲染全部会话、自动聚焦输入框。 */
+function openSearchOverlay() {
+  searchOverlay.classList.add('active');
+  searchModalInput.value = '';
+  renderSearchResults('');
+  setTimeout(() => searchModalInput.focus(), 0);
+}
+
+/** 关闭搜索浮层。 */
+function closeSearchOverlay() {
+  searchOverlay.classList.remove('active');
+}
+
+/** HTML 转义，防止消息内容中的标签被当作 HTML 执行（XSS 防护）。 */
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/** 转义正则元字符，把关键字作为字面量构建正则。 */
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 高亮文本中的关键字：按关键字（大小写不敏感）切分，命中片段用 <mark> 包裹。
+ * 每段单独转义 HTML，避免消息内容中的标签被当作 HTML 执行。
+ */
+function highlightSnippet(text, keyword) {
+  const raw = text == null ? '' : String(text);
+  const kw = (keyword || '').trim();
+  if (!kw) return escapeHtml(raw);
+  const re = new RegExp('(' + escapeRegex(kw) + ')', 'gi');
+  return raw.split(re).map(part =>
+    part.toLowerCase() === kw.toLowerCase()
+      ? '<mark>' + escapeHtml(part) + '</mark>'
+      : escapeHtml(part)
+  ).join('');
+}
+
+let _searchReqId = 0;
+let _searchTimer = null;
+
+/**
+ * 渲染搜索结果。空关键字展示全部会话（仅标题，浏览模式）；有关键字时调用
+ * /api/search 检索标题与消息内容，展示标题 + 内容片段（高亮命中）。
+ * 用 _searchReqId 丢弃过期响应，避免快速输入时旧请求覆盖新结果。
+ */
+async function renderSearchResults(query) {
+  const q = (query || '').trim();
+  if (!q) {
+    renderResultItems(
+      allConversations.map(c => ({ id: c.id, title: c.title, snippet: null })),
+      ''
+    );
+    return;
+  }
+  const myId = ++_searchReqId;
+  const box = document.getElementById('searchResults');
+  box.innerHTML = '<div class="result-empty">搜索中…</div>';
+  try {
+    const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (myId !== _searchReqId) return;  // 已有更新的请求，丢弃过期响应
+    renderResultItems(data.results || [], q);
+  } catch (e) {
+    if (myId === _searchReqId) {
+      box.innerHTML = '<div class="result-empty">搜索失败：' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+/** 渲染结果项：标题 + 可选内容片段（命中高亮）；无结果显示提示。点击切换会话。 */
+function renderResultItems(results, keyword) {
+  const box = document.getElementById('searchResults');
+  box.innerHTML = '';
+  if (results.length === 0) {
+    const empty = el('div', 'result-empty');
+    empty.textContent = keyword ? '无匹配对话' : '暂无历史会话';
+    box.appendChild(empty);
+    return;
+  }
+  results.forEach(r => {
+    const item = el('div', 'result-item');
+    const title = el('div', 'result-title');
+    title.innerHTML = highlightSnippet(r.title, keyword);
+    item.appendChild(title);
+    if (r.snippet) {
+      const snip = el('div', 'result-snippet');
+      snip.innerHTML = highlightSnippet(r.snippet, keyword);
+      item.appendChild(snip);
+    }
+    item.title = r.title;
+    item.addEventListener('click', () => {
+      switchConversation(r.id);
+      closeSearchOverlay();
+    });
+    box.appendChild(item);
+  });
+}
+
+searchBtn.addEventListener('click', openSearchOverlay);
+searchCloseBtn.addEventListener('click', closeSearchOverlay);
+// 仅点击遮罩区域退出搜索（点击模态框内部不退出）
+searchOverlay.addEventListener('click', (e) => {
+  if (e.target === searchOverlay) closeSearchOverlay();
+});
+searchModalInput.addEventListener('input', (e) => {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => renderSearchResults(e.target.value), 200);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && searchOverlay.classList.contains('active')) closeSearchOverlay();
+});
+collapseBtn.addEventListener('click', () => {
+  document.getElementById('sidebar').classList.add('collapsed');
+});
+expandBtn.addEventListener('click', () => {
+  document.getElementById('sidebar').classList.remove('collapsed');
+});
+
+// ==================== 记忆设置 ====================
+const memoryOverlay = document.getElementById('memoryOverlay');
+const memoryCloseBtn = document.getElementById('memoryCloseBtn');
+const memoryTextarea = document.getElementById('memoryTextarea');
+const memorySaveBtn = document.getElementById('memorySaveBtn');
+const memoryCount = document.getElementById('memoryCount');
+let memoryMaxChars = 2000;
+
+/** 打开记忆设置浮层：加载当前记忆并聚焦输入框。 */
+function openMemoryOverlay() {
+  memoryOverlay.classList.add('active');
+  memoryTextarea.value = '';
+  updateMemoryCount();
+  fetch('/api/memory')
+    .then(r => r.json())
+    .then(data => {
+      memoryMaxChars = data.max_chars || 2000;
+      memoryTextarea.value = data.content || '';
+      updateMemoryCount();
+      memoryTextarea.focus();
+    })
+    .catch(() => {});
+}
+
+/** 关闭记忆设置浮层。 */
+function closeMemoryOverlay() {
+  memoryOverlay.classList.remove('active');
+}
+
+/** 实时刷新字数统计；超上限时标红并禁用保存。 */
+function updateMemoryCount() {
+  const len = memoryTextarea.value.length;
+  memoryCount.textContent = len + ' / ' + memoryMaxChars;
+  const over = len > memoryMaxChars;
+  memoryCount.classList.toggle('over-limit', over);
+  memoryTextarea.classList.toggle('over-limit', over);
+  memorySaveBtn.disabled = over;
+}
+
+/** 保存记忆到后端（后端会强制截断到字数上限）。 */
+async function saveMemory() {
+  try {
+    const res = await fetch('/api/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: memoryTextarea.value })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    memoryTextarea.value = data.content;
+    updateMemoryCount();
+    closeMemoryOverlay();
+  } catch (e) {
+    memoryCount.textContent = '保存失败：' + e.message;
+  }
+}
+
+memoryCloseBtn.addEventListener('click', closeMemoryOverlay);
+memoryOverlay.addEventListener('click', (e) => {
+  if (e.target === memoryOverlay) closeMemoryOverlay();
+});
+memoryTextarea.addEventListener('input', updateMemoryCount);
+memorySaveBtn.addEventListener('click', saveMemory);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && memoryOverlay.classList.contains('active')) closeMemoryOverlay();
+});
+
+// ==================== 设置面板（功能5）====================
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+const settingsSaveBtn = document.getElementById('settingsSaveBtn');
+const settingsMsg = document.getElementById('settingsMsg');
+const openMemoryBtn = document.getElementById('openMemoryBtn');
+const courseCommunityBtn = document.getElementById('courseCommunityBtn');
+const courseCommunityStatus = document.getElementById('courseCommunityStatus');
+// 与后端 Config.SETTABLE_FIELDS 对应的可编辑字段（顺序即表单顺序）
+const SETTINGS_FIELDS = [
+  'llm_model', 'llm_api_key', 'llm_base_url', 'llm_timeout',
+  'max_agent_rounds', 'history_window', 'memory_max_chars',
+  'memory_enabled', 'request_delay', 'search_limit',
+  'vision_enabled', 'vision_base_url', 'vision_api_key',
+  'vision_model', 'vision_max_images'
+];
+// 字段中文名（用于保存后提示"哪些项需重启"）
+const SETTINGS_LABELS = {
+  llm_model: '模型名称', llm_api_key: 'API Key', llm_base_url: 'API 地址',
+  llm_timeout: '请求超时', max_agent_rounds: '最大工具轮数',
+  history_window: '对话记忆轮数', memory_max_chars: '长期记忆字数上限',
+  memory_enabled: '长期记忆开关', request_delay: '请求间隔', search_limit: '搜索返回条数',
+  vision_enabled: '图片理解开关', vision_base_url: '视觉模型 API 地址',
+  vision_api_key: '视觉模型 API Key', vision_model: '视觉模型名称',
+  vision_max_images: '单帖最多理解图片数'
+};
+
+/** 打开设置浮层：加载当前生效配置并填入表单（checkbox 单独按选中态赋值）。 */
+function openSettingsOverlay() {
+  settingsOverlay.classList.add('active');
+  settingsMsg.textContent = '';
+  loadCourseCommunityStatus();
+  fetch('/api/settings')
+    .then(r => r.json())
+    .then(data => {
+      const s = data.settings || {};
+      SETTINGS_FIELDS.forEach(f => {
+        const input = settingsOverlay.querySelector('[data-field="' + f + '"]');
+        if (!input) return;
+        if (input.type === 'checkbox') { input.checked = !!s[f]; return; }
+        if (input.type === 'password') {
+          // API Key 等敏感字段不回填明文（后端不下发），仅按"是否已配置"显示占位提示
+          input.value = '';
+          input.placeholder = s[f + '_configured'] ? '已配置（留空表示不修改）' : '留空表示不修改';
+          return;
+        }
+        input.value = s[f] != null ? s[f] : '';
+      });
+    })
+    .catch(() => { settingsMsg.textContent = '加载设置失败'; });
+}
+
+/** 关闭设置浮层。 */
+function closeSettingsOverlay() {
+  settingsOverlay.classList.remove('active');
+}
+
+/**
+ * 保存设置到后端。
+ * 文本/数字字段空表示"不修改"；记忆开关为复选框，始终提交布尔值。
+ * 保存后展示热生效情况与需重启项提示。
+ */
+async function saveSettings() {
+  const updates = {};
+  SETTINGS_FIELDS.forEach(f => {
+    const input = settingsOverlay.querySelector('[data-field="' + f + '"]');
+    if (!input) return;
+    if (input.type === 'checkbox') {
+      updates[f] = input.checked;
+    } else {
+      const val = input.value.trim();
+      if (val !== '') updates[f] = val;
+    }
+  });
+  if (Object.keys(updates).length === 0) {
+    settingsMsg.textContent = '没有需要保存的修改';
+    return;
+  }
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    let msg = '已保存，即时生效。';
+    if (data.restart_needed && data.restart_needed.length) {
+      msg = '已保存。' + data.restart_needed
+        .map(k => SETTINGS_LABELS[k] || k).join('、') + ' 需重启服务后生效。';
+    }
+    settingsMsg.textContent = msg;
+  } catch (e) {
+    settingsMsg.textContent = '保存失败：' + e.message;
+  }
+}
+
+settingsBtn.addEventListener('click', openSettingsOverlay);
+settingsCloseBtn.addEventListener('click', closeSettingsOverlay);
+settingsOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsOverlay) closeSettingsOverlay();
+});
+settingsSaveBtn.addEventListener('click', saveSettings);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && settingsOverlay.classList.contains('active')) closeSettingsOverlay();
+});
+// "编辑记忆内容"：关闭设置浮层后打开记忆编辑器（两浮层叠放会互相遮挡）
+openMemoryBtn.addEventListener('click', () => {
+  closeSettingsOverlay();
+  openMemoryOverlay();
+});
+
+/**
+ * 加载选课社区配置状态并显示到设置面板。
+ * 登录进行中时每 3 秒自动轮询，直到登录结束或已配置。
+ */
+function loadCourseCommunityStatus() {
+  fetch('/api/course-community/status')
+    .then(r => r.json())
+    .then(d => {
+      if (d.logging_in) {
+        courseCommunityStatus.textContent = '登录中…';
+        courseCommunityStatus.style.color = '#d97706';
+        setTimeout(loadCourseCommunityStatus, 3000);
+      } else if (d.configured) {
+        courseCommunityStatus.textContent = '已配置（' + (d.username || '') + '）';
+        courseCommunityStatus.style.color = '#10a37f';
+      } else {
+        courseCommunityStatus.textContent = '未配置';
+        courseCommunityStatus.style.color = '';
+      }
+    })
+    .catch(() => {
+      courseCommunityStatus.textContent = '状态获取失败';
+      courseCommunityStatus.style.color = '';
+    });
+}
+
+/** 触发选课社区登录：后端打开浏览器，用户手动登录后自动保存登录态。 */
+function startCourseCommunityLogin() {
+  courseCommunityStatus.textContent = '正在打开浏览器…';
+  courseCommunityStatus.style.color = '#d97706';
+  fetch('/api/course-community/login', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      courseCommunityStatus.textContent = d.message;
+      setTimeout(loadCourseCommunityStatus, 3000);
+    })
+    .catch(() => {
+      courseCommunityStatus.textContent = '触发登录失败';
+      loadCourseCommunityStatus();
+    });
+}
+courseCommunityBtn.addEventListener('click', startCourseCommunityLogin);
+
+/**
+ * 切换流式生成状态：发送按钮 ↔ 停止按钮（同一位置、同一颜色，仅图标与提示变化）。
+ * 生成期间按钮始终可用（停止），输入框禁用；空闲时恢复为发送（空内容置灰）。
+ */
+function setStreaming(v) {
+  isStreaming = v;
+  input.disabled = v;
+  webBtn.disabled = v;
+  if (v) {
+    sendBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>';
+    sendBtn.title = '停止生成';
+    sendBtn.disabled = false;
+  } else {
+    sendBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
+    sendBtn.title = '发送';
+    sendBtn.disabled = !input.value.trim();
+  }
+}
+
+// ==================== 初始化 ====================
+async function init() {
+  // 加载已有会话列表
+  const res = await fetch('/api/conversations');
+  const data = await res.json();
+  renderSidebar(data.conversations);
+  if (data.conversations.length > 0) {
+    // 刷新时恢复到最近一个会话，而不是创建空对话
+    await switchConversation(data.conversations[0].id);
+  } else {
+    // 无历史会话：准备新对话状态（不持久化，发消息时才创建）
+    currentConvId = null;
+    clearChat();
+  }
+}
+init();
+</script>
+</body>
+</html>
